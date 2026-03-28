@@ -1,0 +1,48 @@
+[package]
+name = "dns-filter"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+
+[[bin]]
+name = "dns-filter"
+path = "src/main.rs"
+
+[dependencies]
+# DNS wire-format parsing and message construction
+hickory-proto    = "0.24"
+# Async upstream resolver with retry, rotation support
+hickory-resolver = { version = "0.24", features = ["tokio-runtime"] }
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "signal", "macros", "io-util"] }
+
+# HTTP client for blocklist downloads (rustls = no OpenSSL dependency)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip"] }
+
+# Config file parsing
+serde = { version = "1", features = ["derive"] }
+toml  = "0.8"
+
+# Logging
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Bloom filter pre-screen before HashSet
+bloomfilter = "1.0"
+
+# Lock-free atomic pointer swap for hot-reloading blocklist
+arc-swap = "1.7"
+
+# Fast DoS-resistant hashing for HashSet
+ahash = "0.8"
+
+# Error handling
+anyhow    = "1"
+thiserror = "1"
+
+[profile.release]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+strip         = "symbols"
