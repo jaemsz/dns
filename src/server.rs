@@ -18,6 +18,7 @@ const MAX_TCP_MSG: usize = 65535;
 pub struct DnsServer {
     config: Arc<Config>,
     resolver: Arc<UpstreamResolver>,
+    local_resolver: Option<Arc<UpstreamResolver>>,
     blocklist: SharedBlocklist,
 }
 
@@ -25,11 +26,13 @@ impl DnsServer {
     pub fn new(
         config: Arc<Config>,
         resolver: Arc<UpstreamResolver>,
+        local_resolver: Option<Arc<UpstreamResolver>>,
         blocklist: SharedBlocklist,
     ) -> Self {
         Self {
             config,
             resolver,
+            local_resolver,
             blocklist,
         }
     }
@@ -64,7 +67,7 @@ impl DnsServer {
         query_bytes: Vec<u8>,
         peer: SocketAddr,
     ) {
-        let response_bytes = match self.process_query(&query_bytes).await {
+        let response_bytes = match self.process_query(&query_bytes, peer).await {
             Ok(bytes) => bytes,
             Err(e) => {
                 warn!(peer = %peer, "Query processing error: {e}");
@@ -140,7 +143,7 @@ impl DnsServer {
             }
 
             // Process and respond
-            let response = match self.process_query(&msg_buf).await {
+            let response = match self.process_query(&msg_buf, peer).await {
                 Ok(bytes) => bytes,
                 Err(e) => {
                     warn!(peer = %peer, "DoT query processing error: {e}");
@@ -163,7 +166,7 @@ impl DnsServer {
 
     // ── Shared query processing ───────────────────────────────────────────────
 
-    async fn process_query(&self, query_bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+    async fn process_query(&self, query_bytes: &[u8], peer: SocketAddr) -> anyhow::Result<Vec<u8>> {
         let query = Message::from_bytes(query_bytes)
             .map_err(|e| anyhow::anyhow!("DNS parse error: {e}"))?;
 
@@ -181,12 +184,27 @@ impl DnsServer {
             None => anyhow::bail!("Empty question section"),
         };
         let qtype = question.map(|q| q.query_type()).unwrap_or(RecordType::A);
+        let is_local = peer.ip().is_loopback();
 
         if self.config.server.debug {
-            info!(domain = %domain, qtype = ?qtype, "Query");
+            let src = if is_local { "local" } else { "remote" };
+            info!(domain = %domain, qtype = ?qtype, src = src, peer = %peer, "Query");
         }
 
-        // Lock-free blocklist check via ArcSwap::load()
+        // Local queries bypass the blocklist and use the original VPC DNS resolver
+        if is_local {
+            if let Some(local) = &self.local_resolver {
+                match local.forward(&query).await {
+                    Ok(response) => return response
+                        .to_bytes()
+                        .map_err(|e| anyhow::anyhow!("Encode local response: {e}")),
+                    Err(_) => return build_servfail(&query),
+                }
+            }
+            // Fall through to upstream DoT if no local resolver configured
+        }
+
+        // Remote queries: check blocklist first
         let bl = self.blocklist.load();
         if bl.is_blocked(&domain) {
             if self.config.server.debug {

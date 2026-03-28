@@ -1,4 +1,5 @@
 use crate::config::UpstreamResolverEntry;
+use std::net::SocketAddr;
 use hickory_proto::ProtoErrorKind;
 use hickory_proto::op::{Message, MessageType, OpCode, ResponseCode};
 use hickory_proto::rr::RecordType;
@@ -87,6 +88,32 @@ impl UpstreamResolver {
                 Err(anyhow::anyhow!("Upstream error: {e}"))
             }
         }
+    }
+
+    /// Build a plain-UDP resolver for local queries (e.g. VPC DNS).
+    /// No TLS, no blocklist — used for queries originating from localhost.
+    pub fn new_local(addr: SocketAddr, timeout_ms: u64) -> anyhow::Result<Self> {
+        let mut config = ResolverConfig::new();
+        config.add_name_server(NameServerConfig {
+            socket_addr: addr,
+            protocol: Protocol::Udp,
+            tls_dns_name: None,
+            http_endpoint: None,
+            trust_negative_responses: true,
+            bind_addr: None,
+        });
+
+        let mut opts = ResolverOpts::default();
+        opts.timeout = Duration::from_millis(timeout_ms);
+        opts.attempts = 2;
+        opts.edns0 = true;
+        opts.cache_size = 256;
+
+        let resolver = TokioResolver::builder_with_config(config, TokioConnectionProvider::default())
+            .with_options(opts)
+            .build();
+
+        Ok(Self { inner: resolver })
     }
 
     #[allow(dead_code)]

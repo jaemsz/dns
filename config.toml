@@ -14,6 +14,10 @@ key_pem  = "key.pem"
 
 [upstream]
 timeout_ms = 3000
+# Original VPC/system DNS for local queries (bypass blocklist).
+# On AWS EC2 this is typically the VPC DNS at x.x.x.2 (e.g. 172.31.0.2:53).
+# Set by install.sh automatically. Remove to disable local bypass.
+# local_resolver = "172.31.0.2:53"
 
 # Upstream resolvers use DNS-over-TLS (port 853)
 [[upstream.resolvers]]

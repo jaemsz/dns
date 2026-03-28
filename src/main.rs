@@ -63,9 +63,17 @@ async fn main() -> anyhow::Result<()> {
         "Upstream DoT resolvers configured"
     );
 
+    let local_resolver = if let Some(addr) = config.upstream.local_resolver {
+        info!(addr = %addr, "Local resolver configured — local queries bypass blocklist");
+        Some(Arc::new(UpstreamResolver::new_local(addr, config.upstream.timeout_ms)?))
+    } else {
+        None
+    };
+
     let server = Arc::new(DnsServer::new(
         Arc::clone(&config),
         Arc::clone(&resolver),
+        local_resolver,
         Arc::clone(&shared_blocklist),
     ));
 

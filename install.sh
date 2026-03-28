@@ -26,6 +26,17 @@ if [[ ! -f "$SCRIPT_DIR/config.toml" ]]; then
     exit 1
 fi
 
+# ── Capture original DNS resolver before we change anything ───────────────────
+ORIGINAL_DNS=""
+if [[ -f /etc/resolv.conf ]]; then
+    ORIGINAL_DNS=$(grep -m1 '^nameserver' /etc/resolv.conf | awk '{print $2}' || true)
+fi
+# Fallback: on AWS EC2 the VPC DNS is always at the .2 address of the VPC CIDR
+if [[ -z "$ORIGINAL_DNS" || "$ORIGINAL_DNS" == "127.0.0.53" || "$ORIGINAL_DNS" == "127.0.0.1" ]]; then
+    ORIGINAL_DNS=$(ip route show default | awk '{print $3}' | sed 's/\.[0-9]*$/.2/' || true)
+fi
+echo "Original DNS resolver: ${ORIGINAL_DNS:-unknown}"
+
 # ── Stop and disable systemd-resolved (frees port 53) ────────────────────────
 if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
     echo "Stopping and disabling systemd-resolved to free port 53..."
@@ -77,6 +88,12 @@ setcap cap_net_bind_service+ep "$INSTALL_DIR/$BINARY_NAME"
 # ── Update config.toml to use production ports ────────────────────────────────
 sed -i 's/listen_udp\s*=\s*"0\.0\.0\.0:5353"/listen_udp = "0.0.0.0:53"/' "$INSTALL_DIR/config.toml"
 sed -i 's/listen\s*=\s*"0\.0\.0\.0:8853"/listen   = "0.0.0.0:853"/' "$INSTALL_DIR/config.toml"
+
+# ── Set local_resolver to the original VPC DNS ────────────────────────────────
+if [[ -n "$ORIGINAL_DNS" ]]; then
+    echo "Setting local_resolver to ${ORIGINAL_DNS}:53"
+    sed -i "s|^#\s*local_resolver\s*=.*|local_resolver = \"${ORIGINAL_DNS}:53\"|" "$INSTALL_DIR/config.toml"
+fi
 
 # ── Create systemd unit ──────────────────────────────────────────────────────
 echo "Creating systemd service: $SERVICE_NAME"

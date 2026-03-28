@@ -37,6 +37,9 @@ pub struct UpstreamConfig {
     /// Upstream DoT resolvers, in priority order (rotated with failover).
     pub resolvers: Vec<UpstreamResolverEntry>,
     pub timeout_ms: u64,
+    /// Original VPC/system DNS resolver for local queries (plain UDP).
+    /// Local queries (from 127.0.0.1) bypass the blocklist and use this resolver.
+    pub local_resolver: Option<SocketAddr>,
 }
 
 /// A single upstream DoT resolver.
