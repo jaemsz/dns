@@ -14,6 +14,14 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Explicitly install the ring crypto provider before any rustls code runs.
+    // Required when multiple rustls-compatible providers are present in the dep tree
+    // (e.g. ring via tokio-rustls and aws-lc-rs via reqwest), since rustls 0.23
+    // cannot auto-select in that case.
+    tokio_rustls::rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("Failed to install ring crypto provider (already installed?)"))?;
+
     tracing_subscriber::registry()
         .with(
             EnvFilter::try_from_default_env()
