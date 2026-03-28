@@ -1,8 +1,8 @@
+use crate::config::UpstreamResolverEntry;
 use hickory_proto::op::{Message, MessageType, OpCode, ResponseCode};
 use hickory_proto::rr::RecordType;
 use hickory_resolver::config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts};
 use hickory_resolver::TokioAsyncResolver;
-use std::net::SocketAddr;
 use std::time::Duration;
 use tracing::warn;
 
@@ -11,15 +11,18 @@ pub struct UpstreamResolver {
 }
 
 impl UpstreamResolver {
-    pub fn new(resolvers: &[SocketAddr], timeout_ms: u64) -> anyhow::Result<Self> {
+    /// Build an upstream resolver that connects to each entry via DNS-over-TLS.
+    pub fn new(resolvers: &[UpstreamResolverEntry], timeout_ms: u64) -> anyhow::Result<Self> {
         let mut config = ResolverConfig::new();
-        for addr in resolvers {
+        for entry in resolvers {
             config.add_name_server(NameServerConfig {
-                socket_addr: *addr,
-                protocol: Protocol::Udp,
-                tls_dns_name: None,
+                socket_addr: entry.addr,
+                protocol: Protocol::Tls,
+                tls_dns_name: Some(entry.tls_name.clone()),
                 trust_negative_responses: true,
                 bind_addr: None,
+                // None → hickory uses its built-in webpki root CAs
+                tls_config: None,
             });
         }
 
@@ -34,7 +37,7 @@ impl UpstreamResolver {
         Ok(Self { inner: resolver })
     }
 
-    /// Forward a DNS query Message to upstream and return the response Message.
+    /// Forward a DNS query Message to upstream over DoT and return the response.
     /// Preserves the original query ID so the client's transaction is matched correctly.
     pub async fn forward(&self, query: &Message) -> anyhow::Result<Message> {
         let question = query
@@ -78,7 +81,7 @@ impl UpstreamResolver {
                         Ok(msg)
                     }
                     _ => {
-                        warn!(name = %name, record_type = ?record_type, error = %e, "Upstream resolution failed");
+                        warn!(name = %name, record_type = ?record_type, error = %e, "Upstream DoT resolution failed");
                         Err(anyhow::anyhow!("Upstream error: {e}"))
                     }
                 }
@@ -86,8 +89,6 @@ impl UpstreamResolver {
         }
     }
 
-    /// Look up an A record and return all IPv4 addresses.
-    /// Used for testing connectivity.
     #[allow(dead_code)]
     pub async fn lookup_a(&self, name: &str) -> anyhow::Result<Vec<std::net::Ipv4Addr>> {
         let lookup = self

@@ -10,9 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 # DNS wire-format parsing and message construction
-hickory-proto    = "0.24"
-# Async upstream resolver with retry, rotation support
-hickory-resolver = { version = "0.24", features = ["tokio-runtime"] }
+hickory-proto    = { version = "0.24", features = ["dns-over-rustls"] }
+# Async upstream resolver with retry, rotation support and DoT
+hickory-resolver = { version = "0.24", features = ["tokio-runtime", "dns-over-rustls"] }
 
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "signal", "macros", "io-util"] }
@@ -36,6 +36,10 @@ arc-swap = "1.7"
 
 # Fast DoS-resistant hashing for HashSet
 ahash = "0.8"
+
+# TLS for DoT (DNS-over-TLS) incoming listener
+tokio-rustls  = "0.26"
+rustls-pemfile = "2"
 
 # Error handling
 anyhow    = "1"

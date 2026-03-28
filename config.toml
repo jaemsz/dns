@@ -1,33 +1,44 @@
 [server]
 listen_udp       = "0.0.0.0:5353"   # Use 53 in production (requires root or cap_net_bind_service)
-listen_tcp       = "0.0.0.0:5353"
 udp_payload_size = 4096
 
+# DNS-over-TLS incoming listener (port 853 standard, requires root or capability).
+# Remove or comment out this section to disable the DoT listener.
+# Generate a self-signed cert for testing:
+#   openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=dns-filter"
+[server.dot]
+listen   = "0.0.0.0:8853"   # Use 853 in production
+cert_pem = "cert.pem"
+key_pem  = "key.pem"
+
 [upstream]
-resolvers  = ["8.8.8.8:53", "1.1.1.1:53"]
 timeout_ms = 3000
 
+# Upstream resolvers use DNS-over-TLS (port 853)
+[[upstream.resolvers]]
+addr     = "8.8.8.8:853"
+tls_name = "dns.google"
+
+[[upstream.resolvers]]
+addr     = "1.1.1.1:853"
+tls_name = "cloudflare-dns.com"
+
 [blocklist]
-refresh_interval_secs = 86400    # 24 hours
-block_response        = "nxdomain"  # "nxdomain" or "sinkhole"
+refresh_interval_secs = 86400
+block_response        = "nxdomain"   # "nxdomain" or "sinkhole"
 sinkhole_ipv4         = "0.0.0.0"
 sinkhole_ipv6         = "::"
 
-# StevenBlack unified hosts file (ads + malware)
-# https://github.com/StevenBlack/hosts
 [[blocklist.sources]]
 url     = "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
 format  = "hosts"
 enabled = true
 
-# Hagezi Pro blocklist - domains format
-# https://github.com/hagezi/dns-blocklists
 [[blocklist.sources]]
 url     = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/pro.txt"
 format  = "domains"
 enabled = true
 
-# Hagezi Pro wildcard blocklist
 [[blocklist.sources]]
 url     = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro.txt"
 format  = "domains"

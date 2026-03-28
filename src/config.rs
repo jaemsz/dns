@@ -12,16 +12,37 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
     pub listen_udp: SocketAddr,
-    #[allow(dead_code)]
-    pub listen_tcp: Option<SocketAddr>,
+    /// DoT (DNS-over-TLS) listener. Optional — disabled if absent.
+    pub dot: Option<DotConfig>,
     #[allow(dead_code)]
     pub udp_payload_size: u16,
 }
 
+/// Incoming DNS-over-TLS server configuration.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DotConfig {
+    /// Address to bind the DoT listener, e.g. "0.0.0.0:853"
+    pub listen: SocketAddr,
+    /// Path to PEM-encoded certificate chain (server cert + intermediates)
+    pub cert_pem: String,
+    /// Path to PEM-encoded private key
+    pub key_pem: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpstreamConfig {
-    pub resolvers: Vec<SocketAddr>,
+    /// Upstream DoT resolvers, in priority order (rotated with failover).
+    pub resolvers: Vec<UpstreamResolverEntry>,
     pub timeout_ms: u64,
+}
+
+/// A single upstream DoT resolver.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpstreamResolverEntry {
+    /// IP:port, e.g. "8.8.8.8:853"
+    pub addr: SocketAddr,
+    /// TLS SNI name for certificate validation, e.g. "dns.google"
+    pub tls_name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

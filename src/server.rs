@@ -6,10 +6,14 @@ use hickory_proto::rr::{RData, Record, RecordType};
 use hickory_proto::serialize::binary::{BinDecodable, BinEncodable};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::net::UdpSocket;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, UdpSocket};
+use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info, warn};
 
 const MAX_UDP_PAYLOAD: usize = 4096;
+/// RFC 1035 §4.2.2: TCP messages are prefixed with a 2-byte length.
+const MAX_TCP_MSG: usize = 65535;
 
 pub struct DnsServer {
     config: Arc<Config>,
@@ -29,6 +33,8 @@ impl DnsServer {
             blocklist,
         }
     }
+
+    // ── UDP (plaintext) ──────────────────────────────────────────────────────
 
     pub async fn run_udp(self: Arc<Self>) -> anyhow::Result<()> {
         let socket = UdpSocket::bind(self.config.server.listen_udp).await?;
@@ -71,6 +77,92 @@ impl DnsServer {
         }
     }
 
+    // ── DoT (DNS-over-TLS, RFC 7858) ─────────────────────────────────────────
+
+    /// Accept incoming DoT connections. Each connection is handled in its own task.
+    /// DNS-over-TLS uses standard TCP DNS framing: 2-byte BE length + message bytes.
+    pub async fn run_dot(self: Arc<Self>, acceptor: TlsAcceptor, listen: SocketAddr) -> anyhow::Result<()> {
+        let listener = TcpListener::bind(listen).await?;
+        info!(addr = %listen, "DoT listener started");
+
+        loop {
+            match listener.accept().await {
+                Ok((tcp_stream, peer)) => {
+                    let acceptor = acceptor.clone();
+                    let server = Arc::clone(&self);
+                    tokio::spawn(async move {
+                        match acceptor.accept(tcp_stream).await {
+                            Ok(tls_stream) => {
+                                debug!(peer = %peer, "DoT TLS handshake complete");
+                                server.handle_dot_connection(tls_stream, peer).await;
+                            }
+                            Err(e) => warn!(peer = %peer, "DoT TLS handshake failed: {e}"),
+                        }
+                    });
+                }
+                Err(e) => error!("DoT accept error: {e}"),
+            }
+        }
+    }
+
+    /// Handle a single DoT connection: read queries and write responses until the
+    /// client closes. Multiple queries may be pipelined over one connection (RFC 7858 §3.3).
+    async fn handle_dot_connection<S>(&self, mut stream: S, peer: SocketAddr)
+    where
+        S: AsyncReadExt + AsyncWriteExt + Unpin,
+    {
+        loop {
+            // Read 2-byte big-endian message length
+            let mut len_buf = [0u8; 2];
+            match stream.read_exact(&mut len_buf).await {
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    // Client closed the connection cleanly
+                    break;
+                }
+                Err(e) => {
+                    warn!(peer = %peer, "DoT read length error: {e}");
+                    break;
+                }
+            }
+
+            let msg_len = u16::from_be_bytes(len_buf) as usize;
+            if msg_len == 0 || msg_len > MAX_TCP_MSG {
+                warn!(peer = %peer, msg_len, "DoT invalid message length");
+                break;
+            }
+
+            // Read the DNS message
+            let mut msg_buf = vec![0u8; msg_len];
+            if let Err(e) = stream.read_exact(&mut msg_buf).await {
+                warn!(peer = %peer, "DoT read message error: {e}");
+                break;
+            }
+
+            // Process and respond
+            let response = match self.process_query(&msg_buf).await {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    warn!(peer = %peer, "DoT query processing error: {e}");
+                    break;
+                }
+            };
+
+            // Write 2-byte length prefix + response
+            let resp_len = response.len() as u16;
+            if let Err(e) = stream.write_all(&resp_len.to_be_bytes()).await {
+                warn!(peer = %peer, "DoT write length error: {e}");
+                break;
+            }
+            if let Err(e) = stream.write_all(&response).await {
+                warn!(peer = %peer, "DoT write response error: {e}");
+                break;
+            }
+        }
+    }
+
+    // ── Shared query processing ───────────────────────────────────────────────
+
     async fn process_query(&self, query_bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
         let query = Message::from_bytes(query_bytes)
             .map_err(|e| anyhow::anyhow!("DNS parse error: {e}"))?;
@@ -97,7 +189,7 @@ impl DnsServer {
             return self.build_blocked_response(&query);
         }
 
-        // Forward to upstream
+        // Forward to upstream over DoT
         match self.resolver.forward(&query).await {
             Ok(response) => response
                 .to_bytes()
@@ -115,7 +207,6 @@ impl DnsServer {
             BlockResponse::Sinkhole => {
                 resp.set_response_code(ResponseCode::NoError);
                 if let Some(question) = query.queries().first() {
-                    // Return sinkhole A record for A queries
                     if question.query_type() == RecordType::A {
                         let mut record = Record::new();
                         record.set_name(question.name().clone());
@@ -126,7 +217,6 @@ impl DnsServer {
                         ))));
                         resp.add_answer(record);
                     }
-                    // Return sinkhole AAAA record for AAAA queries
                     if question.query_type() == RecordType::AAAA {
                         let mut record = Record::new();
                         record.set_name(question.name().clone());
