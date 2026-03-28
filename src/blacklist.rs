@@ -26,22 +26,18 @@ impl BlacklistState {
     pub fn is_blocked(&self, domain: &str) -> bool {
         let domain = domain.trim_end_matches('.').to_ascii_lowercase();
 
-        // Fast path: bloom says "definitely not here" → allow immediately
-        if !self.bloom.check(domain.as_str()) {
-            return false;
-        }
-
-        // Exact match
-        if self.exact.contains(&domain) {
+        // Exact match: bloom pre-filters before touching the HashSet
+        if self.bloom.check(domain.as_str()) && self.exact.contains(&domain) {
             return true;
         }
 
         // Wildcard: walk up labels. "a.b.evil.com" checks "b.evil.com", "evil.com".
+        // Each parent label is bloom-checked independently before the HashSet lookup.
         // Bounded at 10 labels to prevent CPU exhaustion from adversarial inputs.
         let labels: Vec<&str> = domain.splitn(10, '.').collect();
         for i in 1..labels.len() {
             let parent = labels[i..].join(".");
-            if self.wildcards.contains(&parent) {
+            if self.bloom.check(parent.as_str()) && self.wildcards.contains(&parent) {
                 return true;
             }
         }
@@ -206,10 +202,10 @@ mod tests {
         let mut wildcard_set: AHashSet<String> = AHashSet::new();
 
         for d in exact {
-            exact_set.insert(d.to_string());
+            exact_set.insert(d.to_ascii_lowercase());
         }
         for d in wildcards {
-            wildcard_set.insert(d.to_string());
+            wildcard_set.insert(d.to_ascii_lowercase());
         }
 
         let total = (exact_set.len() + wildcard_set.len()).max(1);
