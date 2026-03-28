@@ -38,7 +38,7 @@ arc-swap = "1.7"
 ahash = "0.8"
 
 # TLS for DoT (DNS-over-TLS) incoming listener
-tokio-rustls  = "0.26"
+tokio-rustls  = { version = "0.26", features = ["ring"] }
 rustls-pemfile = "2"
 
 # Error handling
