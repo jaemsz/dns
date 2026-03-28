@@ -1,5 +1,5 @@
 [server]
-listen_udp       = "0.0.0.0:5353"   # Use 53 in production (requires root or cap_net_bind_service)
+listen_udp       = "0.0.0.0:53"   # Use 53 in production (requires root or cap_net_bind_service)
 udp_payload_size = 4096
 debug            = true              # Log every DNS query to stdout
 
@@ -8,7 +8,7 @@ debug            = true              # Log every DNS query to stdout
 # Generate a self-signed cert for testing:
 #   openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=dns-filter"
 [server.dot]
-listen   = "0.0.0.0:8853"   # Use 853 in production
+listen   = "0.0.0.0:853"   # Use 853 in production
 cert_pem = "cert.pem"
 key_pem  = "key.pem"
 
