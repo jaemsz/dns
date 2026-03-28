@@ -10,9 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 # DNS wire-format parsing and message construction
-hickory-proto    = { version = "0.24", features = ["dns-over-rustls"] }
+hickory-proto    = { version = "0.25", features = ["tls-ring", "webpki-roots"] }
 # Async upstream resolver with retry, rotation support and DoT
-hickory-resolver = { version = "0.24", features = ["tokio-runtime", "dns-over-rustls"] }
+hickory-resolver = { version = "0.25", features = ["tls-ring", "webpki-roots"] }
 
 # Async runtime
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "signal", "macros", "io-util"] }

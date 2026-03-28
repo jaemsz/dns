@@ -208,24 +208,22 @@ impl DnsServer {
                 resp.set_response_code(ResponseCode::NoError);
                 if let Some(question) = query.queries().first() {
                     if question.query_type() == RecordType::A {
-                        let mut record = Record::new();
-                        record.set_name(question.name().clone());
-                        record.set_ttl(60);
-                        record.set_record_type(RecordType::A);
-                        record.set_data(Some(RData::A(hickory_proto::rr::rdata::A(
-                            self.config.blocklist.sinkhole_ipv4,
-                        ))));
-                        resp.add_answer(record);
+                        resp.add_answer(Record::from_rdata(
+                            question.name().clone(),
+                            60,
+                            RData::A(hickory_proto::rr::rdata::A(
+                                self.config.blocklist.sinkhole_ipv4,
+                            )),
+                        ));
                     }
                     if question.query_type() == RecordType::AAAA {
-                        let mut record = Record::new();
-                        record.set_name(question.name().clone());
-                        record.set_ttl(60);
-                        record.set_record_type(RecordType::AAAA);
-                        record.set_data(Some(RData::AAAA(hickory_proto::rr::rdata::AAAA(
-                            self.config.blocklist.sinkhole_ipv6,
-                        ))));
-                        resp.add_answer(record);
+                        resp.add_answer(Record::from_rdata(
+                            question.name().clone(),
+                            60,
+                            RData::AAAA(hickory_proto::rr::rdata::AAAA(
+                                self.config.blocklist.sinkhole_ipv6,
+                            )),
+                        ));
                     }
                 }
             }
