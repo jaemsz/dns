@@ -1,5 +1,6 @@
 use crate::blacklist::SharedBlocklist;
 use crate::config::{BlockResponse, Config};
+use crate::query_log::{QueryAction, QueryLogEntry, QueryLogger};
 use crate::resolver::UpstreamResolver;
 use hickory_proto::op::{Message, MessageType, OpCode, ResponseCode};
 use hickory_proto::rr::{RData, Record, RecordType};
@@ -20,6 +21,7 @@ pub struct DnsServer {
     resolver: Arc<UpstreamResolver>,
     local_resolver: Option<Arc<UpstreamResolver>>,
     blocklist: SharedBlocklist,
+    logger: Option<QueryLogger>,
 }
 
 impl DnsServer {
@@ -28,12 +30,14 @@ impl DnsServer {
         resolver: Arc<UpstreamResolver>,
         local_resolver: Option<Arc<UpstreamResolver>>,
         blocklist: SharedBlocklist,
+        logger: Option<QueryLogger>,
     ) -> Self {
         Self {
             config,
             resolver,
             local_resolver,
             blocklist,
+            logger,
         }
     }
 
@@ -195,9 +199,13 @@ impl DnsServer {
         if is_local {
             if let Some(local) = &self.local_resolver {
                 match local.forward(&query).await {
-                    Ok(response) => return response
-                        .to_bytes()
-                        .map_err(|e| anyhow::anyhow!("Encode local response: {e}")),
+                    Ok(response) => {
+                        let resolved = extract_resolved_ip(&response);
+                        self.log_query(&domain, &qtype, &peer, QueryAction::Local, &resolved);
+                        return response
+                            .to_bytes()
+                            .map_err(|e| anyhow::anyhow!("Encode local response: {e}"));
+                    }
                     Err(_) => return build_servfail(&query),
                 }
             }
@@ -210,15 +218,36 @@ impl DnsServer {
             if self.config.server.debug {
                 info!(domain = %domain, qtype = ?qtype, action = "BLOCKED", "Blocked");
             }
+            let sinkhole = match self.config.blocklist.block_response {
+                BlockResponse::Nxdomain => "NXDOMAIN".to_string(),
+                BlockResponse::Sinkhole => self.config.blocklist.sinkhole_ipv4.to_string(),
+            };
+            self.log_query(&domain, &qtype, &peer, QueryAction::Blocked, &sinkhole);
             return self.build_blocked_response(&query);
         }
 
         // Forward to upstream over DoT
         match self.resolver.forward(&query).await {
-            Ok(response) => response
-                .to_bytes()
-                .map_err(|e| anyhow::anyhow!("Encode upstream response: {e}")),
+            Ok(response) => {
+                let resolved = extract_resolved_ip(&response);
+                self.log_query(&domain, &qtype, &peer, QueryAction::Allowed, &resolved);
+                response
+                    .to_bytes()
+                    .map_err(|e| anyhow::anyhow!("Encode upstream response: {e}"))
+            }
             Err(_) => build_servfail(&query),
+        }
+    }
+
+    fn log_query(&self, domain: &str, qtype: &RecordType, peer: &SocketAddr, action: QueryAction, resolved_ip: &str) {
+        if let Some(logger) = &self.logger {
+            logger.log(QueryLogEntry::new(
+                domain.to_string(),
+                format!("{qtype:?}"),
+                peer.ip().to_string(),
+                action,
+                resolved_ip.to_string(),
+            ));
         }
     }
 
@@ -280,4 +309,16 @@ fn build_not_impl(query: &Message) -> anyhow::Result<Vec<u8>> {
     resp.set_response_code(ResponseCode::NotImp);
     resp.to_bytes()
         .map_err(|e| anyhow::anyhow!("Encode NOTIMP: {e}"))
+}
+
+/// Extract the first A or AAAA address from a DNS response message.
+fn extract_resolved_ip(msg: &Message) -> String {
+    for record in msg.answers() {
+        match record.data() {
+            RData::A(a) => return a.0.to_string(),
+            RData::AAAA(aaaa) => return aaaa.0.to_string(),
+            _ => {}
+        }
+    }
+    String::new()
 }

@@ -7,6 +7,37 @@ pub struct Config {
     pub server: ServerConfig,
     pub upstream: UpstreamConfig,
     pub blocklist: BlocklistConfig,
+    #[serde(default)]
+    pub logging: LoggingConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoggingConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "LoggingConfig::default_db_path")]
+    pub db_path: String,
+    #[serde(default = "LoggingConfig::default_retention_days")]
+    pub retention_days: u64,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            db_path: Self::default_db_path(),
+            retention_days: Self::default_retention_days(),
+        }
+    }
+}
+
+impl LoggingConfig {
+    fn default_db_path() -> String {
+        "query_log.db".to_string()
+    }
+    fn default_retention_days() -> u64 {
+        7
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

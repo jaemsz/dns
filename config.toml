@@ -28,6 +28,11 @@ tls_name = "dns.google"
 addr     = "1.1.1.1:853"
 tls_name = "cloudflare-dns.com"
 
+[logging]
+enabled        = true
+db_path        = "query_log.db"      # SQLite database file
+retention_days = 7                    # Auto-purge entries older than this
+
 [blocklist]
 refresh_interval_secs = 86400
 block_response        = "nxdomain"   # "nxdomain" or "sinkhole"

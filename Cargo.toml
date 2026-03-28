@@ -41,6 +41,9 @@ ahash = "0.8"
 tokio-rustls  = { version = "0.26", features = ["ring"] }
 rustls-pemfile = "2"
 
+# DNS query logging (SQLite, WAL mode, bundled = no system libsqlite3 needed)
+rusqlite = { version = "0.33", features = ["bundled"] }
+
 # Error handling
 anyhow    = "1"
 thiserror = "1"

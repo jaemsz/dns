@@ -85,6 +85,9 @@ chmod 755 "$INSTALL_DIR/$BINARY_NAME"
 # Grant port-binding capability so the binary can use ports 53/853 without root
 setcap cap_net_bind_service+ep "$INSTALL_DIR/$BINARY_NAME"
 
+# ── Set logging db_path to install directory ──────────────────────────────────
+sed -i "s|db_path.*=.*\"query_log.db\"|db_path = \"$INSTALL_DIR/query_log.db\"|" "$INSTALL_DIR/config.toml"
+
 # ── Update config.toml to use production ports ────────────────────────────────
 sed -i 's/listen_udp\s*=\s*"0\.0\.0\.0:5353"/listen_udp = "0.0.0.0:53"/' "$INSTALL_DIR/config.toml"
 sed -i 's/listen\s*=\s*"0\.0\.0\.0:8853"/listen   = "0.0.0.0:853"/' "$INSTALL_DIR/config.toml"

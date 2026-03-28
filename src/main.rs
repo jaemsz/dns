@@ -1,10 +1,12 @@
 mod blacklist;
 mod config;
+mod query_log;
 mod resolver;
 mod server;
 
 use crate::blacklist::{build_blocklist, spawn_refresh_task, SharedBlocklist};
 use crate::config::Config;
+use crate::query_log::QueryLogger;
 use crate::resolver::UpstreamResolver;
 use crate::server::DnsServer;
 use arc_swap::ArcSwap;
@@ -70,11 +72,24 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
+    let logger = if config.logging.enabled {
+        let l = QueryLogger::new(&config.logging)?;
+        info!(
+            db_path = %config.logging.db_path,
+            retention_days = config.logging.retention_days,
+            "Query logging enabled"
+        );
+        Some(l)
+    } else {
+        None
+    };
+
     let server = Arc::new(DnsServer::new(
         Arc::clone(&config),
         Arc::clone(&resolver),
         local_resolver,
         Arc::clone(&shared_blocklist),
+        logger,
     ));
 
     // Build TlsAcceptor for the DoT listener if configured
