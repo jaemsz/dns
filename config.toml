@@ -1,6 +1,7 @@
 [server]
 listen_udp       = "0.0.0.0:5353"   # Use 53 in production (requires root or cap_net_bind_service)
 udp_payload_size = 4096
+debug            = true              # Log every DNS query to stdout
 
 # DNS-over-TLS incoming listener (port 853 standard, requires root or capability).
 # Remove or comment out this section to disable the DoT listener.

@@ -16,6 +16,9 @@ pub struct ServerConfig {
     pub dot: Option<DotConfig>,
     #[allow(dead_code)]
     pub udp_payload_size: u16,
+    /// Log every DNS query to stdout. Defaults to false.
+    #[serde(default)]
+    pub debug: bool,
 }
 
 /// Incoming DNS-over-TLS server configuration.

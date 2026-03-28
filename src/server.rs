@@ -175,17 +175,23 @@ impl DnsServer {
             return build_not_impl(&query);
         }
 
-        let domain = match query.queries().first() {
+        let question = query.queries().first();
+        let domain = match question {
             Some(q) => q.name().to_string(),
             None => anyhow::bail!("Empty question section"),
         };
+        let qtype = question.map(|q| q.query_type()).unwrap_or(RecordType::A);
 
-        debug!(domain = %domain, "Processing query");
+        if self.config.server.debug {
+            info!(domain = %domain, qtype = ?qtype, "Query");
+        }
 
         // Lock-free blocklist check via ArcSwap::load()
         let bl = self.blocklist.load();
         if bl.is_blocked(&domain) {
-            info!(domain = %domain, "Blocked query");
+            if self.config.server.debug {
+                info!(domain = %domain, qtype = ?qtype, action = "BLOCKED", "Blocked");
+            }
             return self.build_blocked_response(&query);
         }
 
