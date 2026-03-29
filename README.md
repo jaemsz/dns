@@ -1,6 +1,6 @@
 # dns
 
-A DNS filtering server written in Rust that blocks malicious and ad-serving domains using crowd-sourced blocklists. Queries are forwarded to upstream resolvers over DNS-over-TLS (DoT) for encrypted resolution. Includes a DoT listener for encrypted client connections (e.g. from [dns-proxy](https://github.com/jaemsz/dns-proxy/)).
+A DNS filtering server written in Rust that blocks malicious and ad-serving domains using crowd-sourced blocklists. Queries are forwarded to upstream resolvers over DNS-over-TLS (DoT) for encrypted resolution. Includes a DoT listener for encrypted client connections (e.g. from [dns-proxy](https://github.com/jaemsz/dns-proxy-mac/)).
 
 ## Features
 
